@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Cloud Notepad (GitHub)</title>
+<style>
+body {
+  font-family: Arial, sans-serif;
+  background: #f2f2f2;
+  padding: 30px;
+}
+.container {
+  background: white;
+  padding: 20px;
+  max-width: 800px;
+  border-radius: 6px;
+}
+textarea {
+  width: 100%;
+  height: 300px;
+  margin-top: 10px;
+  font-family: monospace;
+  font-size: 14px;
+}
+input {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+}
+button {
+  margin-top: 10px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+.status {
+  margin-top: 10px;
+  padding: 10px;
+  border-radius: 4px;
+}
+.success { background: #e6ffed; color: #2d662d; }
+.error { background: #ffebe9; color: #662d2d; }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <h2>📝 Cloud Notepad (GitHub)</h2>
+
+  <!-- GitHub Configuration -->
+  <label>GitHub Username</label>
+  <input id="owner" placeholder="e.g. azxcaaa">
+
+  <label>Repository Name</label>
+  <input id="repo" placeholder="notepad">
+
+  <label>Personal Access Token</label>
+  <input id="token" placeholder="ghp_XXXXXXXXXXXXXXXXXXXX">
+
+  <hr>
+
+  <!-- File Controls -->
+  <label>File Name</label>
+  <input id="filename" placeholder="notes.txt">
+
+  <label>Text</label>
+  <textarea id="content"></textarea>
+
+  <button onclick="loadFile()">Load File</button>
+  <button onclick="saveFile()">Save File</button>
+  <button onclick="clearText()">Clear Text</button>
+
+  <div id="status" class="status"></div>
+</div>
+
+<script>
+const BRANCH = "main";
+
+/* ===== HELPERS ===== */
+function setStatus(msg, type) {
+  const s = document.getElementById("status");
+  s.textContent = msg;
+  s.className = "status " + type;
+}
+
+function encode(text) {
+  return btoa(unescape(encodeURIComponent(text)));
+}
+
+function decode(text) {
+  return decodeURIComponent(escape(atob(text)));
+}
+
+function getConfig() {
+  return {
+    owner: document.getElementById("owner").value.trim(),
+    repo: document.getElementById("repo").value.trim(),
+    token: document.getElementById("token").value.trim()
+  };
+}
+
+/* ===== LOAD FILE ===== */
+async function loadFile() {
+  const { owner, repo, token } = getConfig();
+  const file = document.getElementById("filename").value.trim();
+
+  if (!owner || !repo || !token || !file) {
+    return setStatus("Please fill in all fields", "error");
+  }
+
+  setStatus("Loading file...", "success");
+
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/contents/${file}?ref=${BRANCH}`,
+      {
+        headers: {
+          Authorization: `token ${token}`
+        }
+      }
+    );
+
+    if (res.status === 404) {
+      return setStatus("File not found", "error");
+    }
+
+    if (!res.ok) {
+      return setStatus("Error: " + res.statusText, "error");
+    }
+
+    const data = await res.json();
+    document.getElementById("content").value = decode(data.content);
+    setStatus("File loaded successfully", "success");
+
+  } catch (err) {
+    setStatus("Network error: " + err.message, "error");
+  }
+}
+
+/* ===== SAVE FILE ===== */
+async function saveFile() {
+  const { owner, repo, token } = getConfig();
+  const file = document.getElementById("filename").value.trim();
+  const text = document.getElementById("content").value;
+
+  if (!owner || !repo || !token || !file) {
+    return setStatus("Please fill in all fields", "error");
+  }
+
+  setStatus("Saving file...", "success");
+
+  let sha = null;
+
+  // Check if file exists to get SHA
+  try {
+    const check = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/contents/${file}?ref=${BRANCH}`,
+      {
+        headers: {
+          Authorization: `token ${token}`
+        }
+      }
+    );
+
+    if (check.ok) {
+      const data = await check.json();
+      sha = data.sha;
+    }
+  } catch (err) {
+    console.warn("File check failed:", err);
+  }
+
+  const body = {
+    message: sha ? "Update file via Cloud Notepad" : "Create file via Cloud Notepad",
+    content: encode(text),
+    branch: BRANCH
+  };
+
+  if (sha) body.sha = sha;
+
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/contents/${file}`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `token ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(body)
+      }
+    );
+
+    if (!res.ok) {
+      const errorData = await res.json();
+      return setStatus("Save failed: " + (errorData.message || res.statusText), "error");
+    }
+
+    setStatus("File saved successfully", "success");
+  } catch (err) {
+    setStatus("Save failed: " + err.message, "error");
+  }
+}
+
+/* ===== CLEAR TEXT ===== */
+function clearText() {
+  document.getElementById("content").value = "";
+  setStatus("Text cleared", "success");
+}
+</script>
+
+</body>
+</html>
